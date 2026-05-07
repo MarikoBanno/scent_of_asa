@@ -80,6 +80,7 @@ public class AdminReservationService {
                 reservation.getGuideLanguage(),
                 reservation.getCustomerEmail(),
                 reservation.getCustomerPhone(),
+                reservation.getPaymentStatus(),
                 reservation.getReservationStatus(),
                 reservation.getNotes(),
                 reservation.getCreatedAt(),

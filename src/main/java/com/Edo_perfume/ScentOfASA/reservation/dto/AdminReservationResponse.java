@@ -14,6 +14,7 @@ public class AdminReservationResponse {
     private String guideLanguage;
     private String customerEmail;
     private String customerPhone;
+    private String paymentStatus;
     private String reservationStatus;
     private String notes;
     private LocalDateTime createdAt;
@@ -24,8 +25,8 @@ public class AdminReservationResponse {
 
     public AdminReservationResponse(Long reservationId, String reservationCode, LocalDate reservationDate, String timeSlot,
                                     String customerName, Integer guestCount, String guideLanguage, String customerEmail,
-                                    String customerPhone, String reservationStatus, String notes, LocalDateTime createdAt,
-                                    LocalDateTime updatedAt) {
+                                    String customerPhone, String paymentStatus, String reservationStatus, String notes,
+                                    LocalDateTime createdAt, LocalDateTime updatedAt) {
         this.reservationId = reservationId;
         this.reservationCode = reservationCode;
         this.reservationDate = reservationDate;
@@ -35,6 +36,7 @@ public class AdminReservationResponse {
         this.guideLanguage = guideLanguage;
         this.customerEmail = customerEmail;
         this.customerPhone = customerPhone;
+        this.paymentStatus = paymentStatus;
         this.reservationStatus = reservationStatus;
         this.notes = notes;
         this.createdAt = createdAt;
@@ -111,6 +113,14 @@ public class AdminReservationResponse {
 
     public void setCustomerPhone(String customerPhone) {
         this.customerPhone = customerPhone;
+    }
+
+    public String getPaymentStatus() {
+        return paymentStatus;
+    }
+
+    public void setPaymentStatus(String paymentStatus) {
+        this.paymentStatus = paymentStatus;
     }
 
     public String getReservationStatus() {

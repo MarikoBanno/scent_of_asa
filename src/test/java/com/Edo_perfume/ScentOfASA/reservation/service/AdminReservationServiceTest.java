@@ -44,6 +44,7 @@ class AdminReservationServiceTest {
         assertThat(response.getReservations()).singleElement().satisfies(item -> {
             assertThat(item.getReservationCode()).isEqualTo("SOA-8");
             assertThat(item.getCustomerEmail()).isEqualTo("john@example.com");
+            assertThat(item.getPaymentStatus()).isEqualTo("SUCCEEDED");
         });
     }
 
@@ -77,6 +78,7 @@ class AdminReservationServiceTest {
         reservation.setCustomerName("John Smith");
         reservation.setCustomerEmail("john@example.com");
         reservation.setCustomerPhone("090-1111-2222");
+        reservation.setPaymentStatus("SUCCEEDED");
         reservation.setNotes("VIP");
         reservation.setReservationStatus(status);
         reservation.setCreatedAt(LocalDateTime.of(2026, 5, 1, 10, 0));

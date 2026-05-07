@@ -30,8 +30,8 @@
     <aside class="admin-sidebar">
       <p class="admin-sidebar-title">予約管理</p>
       <nav class="admin-sidebar-nav" aria-label="Admin sections">
-        <a class="admin-sidebar-link" href="dashboard.html"><span>ダッシュボード</span><small>本日</small></a>
-        <a class="admin-sidebar-link" href="check_in.html"><span>チェックイン</span><small>来店</small></a>
+        <a class="admin-sidebar-link" href="dashboard.html"><span>ダッシュボード</span><small>today</small></a>
+        <a class="admin-sidebar-link" href="check_in.html"><span>チェックイン</span><small>arrival</small></a>
         <a class="admin-sidebar-link" href="slot.html"><span>枠管理</span><small>calendar</small></a>
         <a class="admin-sidebar-link" href="holiday_control.html"><span>休業日管理</span><small>close day</small></a>
         <a class="admin-sidebar-link is-active" href="reservation_detail.html"><span>予約一覧</span><small>customer</small></a>
@@ -42,11 +42,11 @@
       <section class="admin-panel reservation-filter-panel">
         <div class="admin-filter-row">
           <div class="admin-field">
-            <label for="reservation-filter-date">日付</label>
+            <label for="reservation-filter-date">予約日</label>
             <input id="reservation-filter-date" type="date" />
           </div>
           <div class="admin-field">
-            <label for="reservation-filter-name">氏名</label>
+            <label for="reservation-filter-name">顧客名</label>
             <input id="reservation-filter-name" type="text" placeholder="山田 / Smith" />
           </div>
           <div class="admin-field">
@@ -69,9 +69,21 @@
           </div>
           <div class="admin-toolbar-group">
             <span id="reservation-total-count" class="admin-badge">0件</span>
-            <span id="reservation-status-feedback" class="admin-inline-note">予約データを読み込んでいます。</span>
+            <span id="reservation-status-feedback" class="admin-inline-note">予約データを読み込み中です。</span>
             <a id="reservation-export" class="btn btn-secondary" href="#">CSV 出力</a>
           </div>
+        </div>
+
+        <div class="reservation-table-tools">
+          <div class="admin-field reservation-sort-field">
+            <label for="reservation-sort-key">並び順</label>
+            <select id="reservation-sort-key">
+              <option value="reservationDate">予約日</option>
+              <option value="reservationStatus">予約ステータス</option>
+              <option value="createdAt">作成日時</option>
+            </select>
+          </div>
+          <button id="reservation-sort-direction" class="btn btn-secondary" type="button">降順</button>
         </div>
 
         <div class="admin-table-wrap reservation-table-wrap">
@@ -79,21 +91,24 @@
             <thead>
               <tr>
                 <th>予約番号</th>
-                <th>日付</th>
+                <th>予約日</th>
                 <th>時間</th>
-                <th>氏名</th>
+                <th>顧客名</th>
                 <th>人数</th>
                 <th>言語</th>
                 <th>メール</th>
                 <th>電話番号</th>
-                <th>現在ステータス</th>
+                <th>支払い状態</th>
+                <th>作成日時</th>
+                <th>更新日時</th>
+                <th>予約ステータス</th>
                 <th>ステータス変更</th>
                 <th>メモ</th>
               </tr>
             </thead>
             <tbody id="reservation-table-body">
               <tr>
-                <td class="admin-empty" colspan="11">予約データを読み込んでいます。</td>
+                <td class="admin-empty" colspan="14">予約データを読み込み中です。</td>
               </tr>
             </tbody>
           </table>
@@ -101,6 +116,21 @@
       </section>
     </section>
   </main>
+
+  <div id="reservation-modal" class="admin-modal" hidden aria-hidden="true">
+    <div class="admin-modal-backdrop" data-modal-close="true"></div>
+    <section class="admin-modal-card" role="dialog" aria-modal="true" aria-labelledby="reservation-modal-title">
+      <div class="admin-modal-head">
+        <div>
+          <p class="admin-kicker">予約詳細</p>
+          <h2 id="reservation-modal-title">予約情報</h2>
+        </div>
+        <button id="reservation-modal-close" class="admin-modal-close" type="button" aria-label="閉じる">×</button>
+      </div>
+      <div id="reservation-modal-body" class="admin-keyvalue reservation-modal-grid"></div>
+    </section>
+  </div>
+
   <script src="../shared/js/nav.js"></script>
   <script src="../shared/js/reservation_detail.js"></script>
 </body>
