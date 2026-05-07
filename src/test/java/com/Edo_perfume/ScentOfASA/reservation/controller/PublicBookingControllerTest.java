@@ -22,8 +22,10 @@ import org.springframework.test.web.servlet.MockMvc;
 import com.Edo_perfume.ScentOfASA.reservation.dto.PublicAvailabilityDayResponse;
 import com.Edo_perfume.ScentOfASA.reservation.dto.PublicAvailabilityResponse;
 import com.Edo_perfume.ScentOfASA.reservation.dto.PublicAvailabilitySlotResponse;
+import com.Edo_perfume.ScentOfASA.reservation.dto.PublicPaymentIntentResponse;
 import com.Edo_perfume.ScentOfASA.reservation.dto.PublicReservationResponse;
 import com.Edo_perfume.ScentOfASA.reservation.service.PublicBookingService;
+import com.Edo_perfume.ScentOfASA.reservation.service.StripePaymentService;
 
 @WebMvcTest(PublicBookingController.class)
 @Import(PublicBookingApiExceptionHandler.class)
@@ -34,6 +36,9 @@ class PublicBookingControllerTest {
 
     @MockitoBean
     private PublicBookingService publicBookingService;
+
+    @MockitoBean
+    private StripePaymentService stripePaymentService;
 
     @Test
     void getAvailabilityReturnsCalendarJson() throws Exception {
@@ -67,17 +72,47 @@ class PublicBookingControllerTest {
     }
 
     @Test
+    void createPaymentIntentReturnsClientSecret() throws Exception {
+        when(publicBookingService.prepareReservationPayment(any())).thenReturn(25200L);
+        when(stripePaymentService.createPaymentIntent(any(), any(Long.class)))
+                .thenReturn(new PublicPaymentIntentResponse(
+                        "pk_test_123",
+                        "pi_test_secret_123",
+                        "pi_test_123",
+                        25200L,
+                        "jpy"
+                ));
+
+        mockMvc.perform(post("/api/public/payments/intents")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "reservationDate": "2026-05-12",
+                                  "timeSlot": "13:00",
+                                  "guideLanguage": "ja",
+                                  "guestCount": 2,
+                                  "customerName": "Hanako Yamada",
+                                  "customerEmail": "hanako@example.com"
+                                }
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
+                .andExpect(jsonPath("$.publishableKey").value("pk_test_123"))
+                .andExpect(jsonPath("$.paymentIntentId").value("pi_test_123"));
+    }
+
+    @Test
     void createReservationReturnsCreatedResponse() throws Exception {
         when(publicBookingService.createReservation(any()))
                 .thenReturn(new PublicReservationResponse(
                         12L,
                         "SOA-12",
-                        "PENDING",
+                        "PAID",
                         LocalDate.of(2026, 5, 12),
                         "13:00",
                         "ja",
                         2,
-                        "花子"
+                        "Hanako Yamada"
                 ));
 
         mockMvc.perform(post("/api/public/reservations")
@@ -88,14 +123,15 @@ class PublicBookingControllerTest {
                                   "timeSlot": "13:00",
                                   "guideLanguage": "ja",
                                   "guestCount": 2,
-                                  "customerName": "花子",
-                                  "customerEmail": "hanako@example.com"
+                                  "customerName": "Hanako Yamada",
+                                  "customerEmail": "hanako@example.com",
+                                  "paymentIntentId": "pi_test_123"
                                 }
                                 """))
                 .andExpect(status().isCreated())
                 .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
                 .andExpect(jsonPath("$.reservationCode").value("SOA-12"))
-                .andExpect(jsonPath("$.status").value("PENDING"));
+                .andExpect(jsonPath("$.status").value("PAID"));
     }
 
     @Test
@@ -111,8 +147,9 @@ class PublicBookingControllerTest {
                                   "timeSlot": "13:00",
                                   "guideLanguage": "ja",
                                   "guestCount": 2,
-                                  "customerName": "花子",
-                                  "customerEmail": "hanako@example.com"
+                                  "customerName": "Hanako Yamada",
+                                  "customerEmail": "hanako@example.com",
+                                  "paymentIntentId": "pi_test_123"
                                 }
                                 """))
                 .andExpect(status().isConflict())

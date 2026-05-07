@@ -14,6 +14,8 @@ public interface PublicReservationMapper {
 
     PublicReservation findById(@Param("id") Long id);
 
+    PublicReservation findByPaymentIntentId(@Param("paymentIntentId") String paymentIntentId);
+
     List<PublicReservation> search(@Param("reservationDate") LocalDate reservationDate,
                                    @Param("customerName") String customerName,
                                    @Param("guideLanguage") String guideLanguage);

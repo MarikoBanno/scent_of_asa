@@ -14,6 +14,8 @@
     <result property="customerEmail" column="customer_email"/>
     <result property="customerPhone" column="customer_phone"/>
     <result property="notes" column="notes"/>
+    <result property="paymentIntentId" column="payment_intent_id"/>
+    <result property="paymentStatus" column="payment_status"/>
     <result property="reservationStatus" column="reservation_status"/>
     <result property="createdAt" column="created_at"/>
     <result property="updatedAt" column="updated_at"/>
@@ -30,11 +32,33 @@
       customer_email,
       customer_phone,
       notes,
+      payment_intent_id,
+      payment_status,
       reservation_status,
       created_at,
       updated_at
     FROM public_reservations
     WHERE id = #{id}
+  </select>
+
+  <select id="findByPaymentIntentId" resultMap="publicReservationResultMap">
+    SELECT
+      id,
+      reservation_date,
+      time_slot,
+      guide_language,
+      guest_count,
+      customer_name,
+      customer_email,
+      customer_phone,
+      notes,
+      payment_intent_id,
+      payment_status,
+      reservation_status,
+      created_at,
+      updated_at
+    FROM public_reservations
+    WHERE payment_intent_id = #{paymentIntentId}
   </select>
 
   <select id="search" resultMap="publicReservationResultMap">
@@ -48,6 +72,8 @@
       customer_email,
       customer_phone,
       notes,
+      payment_intent_id,
+      payment_status,
       reservation_status,
       created_at,
       updated_at
@@ -77,6 +103,8 @@
       customer_email,
       customer_phone,
       notes,
+      payment_intent_id,
+      payment_status,
       reservation_status,
       created_at,
       updated_at
@@ -122,6 +150,8 @@
       customer_email,
       customer_phone,
       notes,
+      payment_intent_id,
+      payment_status,
       reservation_status,
       created_at,
       updated_at
@@ -134,6 +164,8 @@
       #{customerEmail},
       #{customerPhone},
       #{notes},
+      #{paymentIntentId},
+      #{paymentStatus},
       #{reservationStatus},
       #{createdAt},
       #{updatedAt}

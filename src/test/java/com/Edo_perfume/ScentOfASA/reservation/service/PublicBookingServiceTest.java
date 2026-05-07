@@ -43,13 +43,16 @@ class PublicBookingServiceTest {
     @Mock
     private StoreHolidayService storeHolidayService;
 
+    @Mock
+    private StripePaymentService stripePaymentService;
+
     @InjectMocks
     private PublicBookingService publicBookingService;
 
     @Test
     void getAvailabilityMarksClosedDaysAndLimitedSlots() {
         when(storeHolidayService.findMonthlyHolidays(2026, 5, "ja"))
-                .thenReturn(List.of(new HolidayCalendarDayResponse(1L, LocalDate.of(2026, 5, 13), "CLOSED", "社内研修", "ja")));
+                .thenReturn(List.of(new HolidayCalendarDayResponse(1L, LocalDate.of(2026, 5, 13), "CLOSED", "Store closed", "ja")));
 
         PublicReservation bookedReservation = new PublicReservation();
         bookedReservation.setReservationDate(LocalDate.of(2026, 5, 12));
@@ -121,45 +124,60 @@ class PublicBookingServiceTest {
     }
 
     @Test
-    void createReservationRejectsClosedDates() {
-        PublicReservationRequest request = new PublicReservationRequest();
+    void prepareReservationPaymentRejectsClosedDates() {
+        PublicReservationRequest request = baseRequest();
         request.setReservationDate(LocalDate.of(2026, 5, 13));
-        request.setTimeSlot("13:00");
-        request.setGuideLanguage("ja");
-        request.setGuestCount(2);
-        request.setCustomerName("花子");
-        request.setCustomerEmail("hanako@example.com");
 
         when(storeHolidayService.isHoliday(LocalDate.of(2026, 5, 13), "ja")).thenReturn(true);
 
-        assertThatThrownBy(() -> publicBookingService.createReservation(request))
+        assertThatThrownBy(() -> publicBookingService.prepareReservationPayment(request))
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessage("The selected date is closed for reservations.");
+    }
 
-        verify(publicReservationMapper, never()).insert(any());
+    @Test
+    void prepareReservationPaymentDoesNotRequireCustomerDetails() {
+        PublicReservationRequest request = new PublicReservationRequest();
+        request.setReservationDate(LocalDate.of(2026, 5, 12));
+        request.setTimeSlot("13:00");
+        request.setGuideLanguage("ja");
+        request.setGuestCount(2);
+
+        when(storeHolidayService.isHoliday(LocalDate.of(2026, 5, 12), "ja")).thenReturn(false);
+        when(adminSlotMapper.findByDateTimeAndLanguage(LocalDate.of(2026, 5, 12), "13:00", "ja"))
+                .thenReturn(createAdminSlot(LocalDate.of(2026, 5, 12), "13:00", "ja", 1L, "OPEN"));
+        when(publicReservationMapper.sumGuestCountByDateAndTime(LocalDate.of(2026, 5, 12), "13:00", "ja"))
+                .thenReturn(0);
+
+        long amount = publicBookingService.prepareReservationPayment(request);
+
+        assertThat(amount).isEqualTo(26400L);
     }
 
     @Test
     void createReservationNormalizesFieldsBeforeInsert() {
-        PublicReservationRequest request = new PublicReservationRequest();
+        PublicReservationRequest request = baseRequest();
         request.setReservationDate(LocalDate.of(2026, 5, 12));
         request.setTimeSlot(" 13:00 ");
         request.setGuideLanguage(" JA ");
         request.setGuestCount(3);
-        request.setCustomerName(" 花子 ");
+        request.setCustomerName(" Hanako Yamada ");
         request.setCustomerEmail(" HANAKO@EXAMPLE.COM ");
         request.setCustomerPhone(" 090-1234-5678 ");
-        request.setNotes(" 遅れて到着 ");
+        request.setNotes(" Allergic to smoke ");
+        request.setPaymentIntentId(" pi_test_123 ");
 
         when(storeHolidayService.isHoliday(LocalDate.of(2026, 5, 12), "ja")).thenReturn(false);
         when(adminSlotMapper.findByDateTimeAndLanguage(LocalDate.of(2026, 5, 12), "13:00", "ja"))
                 .thenReturn(createAdminSlot(LocalDate.of(2026, 5, 12), "13:00", "ja", 1L, "OPEN"));
         when(publicReservationMapper.sumGuestCountByDateAndTime(LocalDate.of(2026, 5, 12), "13:00", "ja"))
                 .thenReturn(1);
+        when(publicReservationMapper.findByPaymentIntentId("pi_test_123")).thenReturn(null);
 
         PublicReservationResponse response = publicBookingService.createReservation(request);
         ArgumentCaptor<PublicReservation> captor = ArgumentCaptor.forClass(PublicReservation.class);
 
+        verify(stripePaymentService).verifySuccessfulPayment(request, 39600L);
         verify(publicReservationMapper).insert(captor.capture());
         PublicReservation inserted = captor.getValue();
         inserted.setId(7L);
@@ -168,19 +186,16 @@ class PublicBookingServiceTest {
         assertThat(inserted.getTimeSlot()).isEqualTo("13:00");
         assertThat(inserted.getCustomerEmail()).isEqualTo("hanako@example.com");
         assertThat(inserted.getCustomerPhone()).isEqualTo("090-1234-5678");
-        assertThat(inserted.getNotes()).isEqualTo("遅れて到着");
-        assertThat(response.getStatus()).isEqualTo("PENDING");
+        assertThat(inserted.getNotes()).isEqualTo("Allergic to smoke");
+        assertThat(inserted.getPaymentIntentId()).isEqualTo("pi_test_123");
+        assertThat(inserted.getPaymentStatus()).isEqualTo("SUCCEEDED");
+        assertThat(response.getStatus()).isEqualTo("PAID");
     }
 
     @Test
-    void createReservationRejectsWhenGuestCountExceedsRemainingCapacity() {
-        PublicReservationRequest request = new PublicReservationRequest();
-        request.setReservationDate(LocalDate.of(2026, 5, 12));
-        request.setTimeSlot("13:00");
-        request.setGuideLanguage("ja");
+    void prepareReservationPaymentRejectsWhenGuestCountExceedsRemainingCapacity() {
+        PublicReservationRequest request = baseRequest();
         request.setGuestCount(3);
-        request.setCustomerName("花子");
-        request.setCustomerEmail("hanako@example.com");
 
         when(storeHolidayService.isHoliday(LocalDate.of(2026, 5, 12), "ja")).thenReturn(false);
         when(adminSlotMapper.findByDateTimeAndLanguage(LocalDate.of(2026, 5, 12), "13:00", "ja"))
@@ -188,26 +203,52 @@ class PublicBookingServiceTest {
         when(publicReservationMapper.sumGuestCountByDateAndTime(LocalDate.of(2026, 5, 12), "13:00", "ja"))
                 .thenReturn(2);
 
-        assertThatThrownBy(() -> publicBookingService.createReservation(request))
+        assertThatThrownBy(() -> publicBookingService.prepareReservationPayment(request))
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessage("The selected slot is no longer available.");
     }
 
     @Test
-    void createReservationRejectsTodayAndTomorrowBookingWindow() {
-        PublicReservationRequest request = new PublicReservationRequest();
+    void prepareReservationPaymentRejectsTodayAndTomorrowBookingWindow() {
+        PublicReservationRequest request = baseRequest();
         request.setReservationDate(LocalDate.now().plusDays(1));
-        request.setTimeSlot("13:00");
-        request.setGuideLanguage("ja");
-        request.setGuestCount(2);
-        request.setCustomerName("Hanako");
-        request.setCustomerEmail("hanako@example.com");
 
         when(storeHolidayService.isHoliday(request.getReservationDate(), "ja")).thenReturn(false);
 
-        assertThatThrownBy(() -> publicBookingService.createReservation(request))
+        assertThatThrownBy(() -> publicBookingService.prepareReservationPayment(request))
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessage("Reservations for the selected date have already closed.");
+    }
+
+    @Test
+    void createReservationRejectsReusedPaymentIntent() {
+        PublicReservationRequest request = baseRequest();
+        request.setPaymentIntentId("pi_test_123");
+
+        when(storeHolidayService.isHoliday(LocalDate.of(2026, 5, 12), "ja")).thenReturn(false);
+        when(adminSlotMapper.findByDateTimeAndLanguage(LocalDate.of(2026, 5, 12), "13:00", "ja"))
+                .thenReturn(createAdminSlot(LocalDate.of(2026, 5, 12), "13:00", "ja", 1L, "OPEN"));
+        when(publicReservationMapper.sumGuestCountByDateAndTime(LocalDate.of(2026, 5, 12), "13:00", "ja"))
+                .thenReturn(0);
+        when(publicReservationMapper.findByPaymentIntentId("pi_test_123")).thenReturn(new PublicReservation());
+
+        assertThatThrownBy(() -> publicBookingService.createReservation(request))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessage("This payment has already been used for a reservation.");
+
+        verify(publicReservationMapper, never()).insert(any());
+    }
+
+    private PublicReservationRequest baseRequest() {
+        PublicReservationRequest request = new PublicReservationRequest();
+        request.setReservationDate(LocalDate.of(2026, 5, 12));
+        request.setTimeSlot("13:00");
+        request.setGuideLanguage("ja");
+        request.setGuestCount(2);
+        request.setCustomerName("Hanako Yamada");
+        request.setCustomerEmail("hanako@example.com");
+        request.setPaymentIntentId("pi_test_123");
+        return request;
     }
 
     private AdminSlot createAdminSlot(LocalDate date, String timeSlot, String language, Long guideStaffId, String slotStatus) {

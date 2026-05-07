@@ -42,15 +42,18 @@ public class PublicBookingService {
     private final AdminSlotMapper adminSlotMapper;
     private final AdminSlotService adminSlotService;
     private final StoreHolidayService storeHolidayService;
+    private final StripePaymentService stripePaymentService;
 
     public PublicBookingService(PublicReservationMapper publicReservationMapper,
                                 AdminSlotMapper adminSlotMapper,
                                 AdminSlotService adminSlotService,
-                                StoreHolidayService storeHolidayService) {
+                                StoreHolidayService storeHolidayService,
+                                StripePaymentService stripePaymentService) {
         this.publicReservationMapper = publicReservationMapper;
         this.adminSlotMapper = adminSlotMapper;
         this.adminSlotService = adminSlotService;
         this.storeHolidayService = storeHolidayService;
+        this.stripePaymentService = stripePaymentService;
     }
 
     @Transactional(readOnly = true)
@@ -111,29 +114,17 @@ public class PublicBookingService {
     }
 
     public PublicReservationResponse createReservation(PublicReservationRequest request) {
-        validateReservationRequest(request);
+        validateReservationCreationRequest(request);
+        long paymentAmount = prepareReservationPayment(request);
+        stripePaymentService.verifySuccessfulPayment(request, paymentAmount);
 
         String normalizedLanguage = normalizeLanguage(request.getGuideLanguage());
         String normalizedTimeSlot = normalizeTimeSlot(request.getTimeSlot());
         LocalDate reservationDate = request.getReservationDate();
+        String normalizedPaymentIntentId = normalizePaymentIntentId(request.getPaymentIntentId());
 
-        if (storeHolidayService.isHoliday(reservationDate, normalizedLanguage)) {
-            throw new IllegalStateException("The selected date is closed for reservations.");
-        }
-        if (isBookingClosedDate(reservationDate)) {
-            throw new IllegalStateException("Reservations for the selected date have already closed.");
-        }
-
-        AdminSlot adminSlot = adminSlotMapper.findByDateTimeAndLanguage(reservationDate, normalizedTimeSlot, normalizedLanguage);
-        if (!isSlotReservable(adminSlot)) {
-            throw new IllegalStateException("The selected slot is no longer available.");
-        }
-
-        int reservedGuestCount = safeGuestCount(publicReservationMapper
-                .sumGuestCountByDateAndTime(reservationDate, normalizedTimeSlot, normalizedLanguage));
-        int remainingCapacity = SLOT_CAPACITY - reservedGuestCount;
-        if (remainingCapacity <= 0 || request.getGuestCount() > remainingCapacity) {
-            throw new IllegalStateException("The selected slot is no longer available.");
+        if (publicReservationMapper.findByPaymentIntentId(normalizedPaymentIntentId) != null) {
+            throw new IllegalStateException("This payment has already been used for a reservation.");
         }
 
         PublicReservation reservation = new PublicReservation();
@@ -145,7 +136,9 @@ public class PublicBookingService {
         reservation.setCustomerEmail(request.getCustomerEmail().trim().toLowerCase(Locale.ROOT));
         reservation.setCustomerPhone(normalizeOptional(request.getCustomerPhone()));
         reservation.setNotes(normalizeOptional(request.getNotes()));
-        reservation.setReservationStatus("PENDING");
+        reservation.setPaymentIntentId(normalizedPaymentIntentId);
+        reservation.setPaymentStatus("SUCCEEDED");
+        reservation.setReservationStatus("PAID");
         LocalDateTime now = LocalDateTime.now();
         reservation.setCreatedAt(now);
         reservation.setUpdatedAt(now);
@@ -166,6 +159,12 @@ public class PublicBookingService {
                 reservation.getGuestCount(),
                 reservation.getCustomerName()
         );
+    }
+
+    public long prepareReservationPayment(PublicReservationRequest request) {
+        validatePaymentPreparationRequest(request);
+        assertReservationBookable(request);
+        return calculateTotalAmount(request.getGuestCount());
     }
 
     private PublicAvailabilitySlotResponse toAvailabilitySlot(AdminSlot adminSlot,
@@ -200,21 +199,56 @@ public class PublicBookingService {
         return value == null ? 0 : value;
     }
 
-    private void validateReservationRequest(PublicReservationRequest request) {
+    private void assertReservationBookable(PublicReservationRequest request) {
+        String normalizedLanguage = normalizeLanguage(request.getGuideLanguage());
+        String normalizedTimeSlot = normalizeTimeSlot(request.getTimeSlot());
+        LocalDate reservationDate = request.getReservationDate();
+
+        if (storeHolidayService.isHoliday(reservationDate, normalizedLanguage)) {
+            throw new IllegalStateException("The selected date is closed for reservations.");
+        }
+        if (isBookingClosedDate(reservationDate)) {
+            throw new IllegalStateException("Reservations for the selected date have already closed.");
+        }
+
+        AdminSlot adminSlot = adminSlotMapper.findByDateTimeAndLanguage(reservationDate, normalizedTimeSlot, normalizedLanguage);
+        if (!isSlotReservable(adminSlot)) {
+            throw new IllegalStateException("The selected slot is no longer available.");
+        }
+
+        int reservedGuestCount = safeGuestCount(publicReservationMapper
+                .sumGuestCountByDateAndTime(reservationDate, normalizedTimeSlot, normalizedLanguage));
+        int remainingCapacity = SLOT_CAPACITY - reservedGuestCount;
+        if (remainingCapacity <= 0 || request.getGuestCount() > remainingCapacity) {
+            throw new IllegalStateException("The selected slot is no longer available.");
+        }
+    }
+
+    private long calculateTotalAmount(int guestCount) {
+        long subtotal = guestCount * 12000L;
+        long tax = Math.round(subtotal * 0.1d);
+        return subtotal + tax;
+    }
+
+    private void validatePaymentPreparationRequest(PublicReservationRequest request) {
         if (request.getReservationDate() == null) {
             throw new IllegalArgumentException("Reservation date is required.");
         }
         if (request.getGuestCount() == null || request.getGuestCount() < 1 || request.getGuestCount() > 4) {
             throw new IllegalArgumentException("Guest count must be between 1 and 4.");
         }
+        normalizeLanguage(request.getGuideLanguage());
+        normalizeTimeSlot(request.getTimeSlot());
+    }
+
+    private void validateReservationCreationRequest(PublicReservationRequest request) {
+        validatePaymentPreparationRequest(request);
         if (request.getCustomerName() == null || request.getCustomerName().isBlank()) {
             throw new IllegalArgumentException("Customer name is required.");
         }
         if (request.getCustomerEmail() == null || request.getCustomerEmail().isBlank()) {
             throw new IllegalArgumentException("Customer email is required.");
         }
-        normalizeLanguage(request.getGuideLanguage());
-        normalizeTimeSlot(request.getTimeSlot());
     }
 
     private void validateYearMonth(int year, int month) {
@@ -250,6 +284,14 @@ public class PublicBookingService {
 
     private String normalizeOptional(String value) {
         return value == null || value.isBlank() ? null : value.trim();
+    }
+
+    private String normalizePaymentIntentId(String paymentIntentId) {
+        String normalized = normalizeOptional(paymentIntentId);
+        if (normalized == null) {
+            throw new IllegalArgumentException("Payment is required before creating a reservation.");
+        }
+        return normalized;
     }
 
     private boolean isBookingClosedDate(LocalDate reservationDate) {

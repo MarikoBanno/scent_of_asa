@@ -12,6 +12,7 @@ public class PublicReservationRequest {
     private String customerEmail;
     private String customerPhone;
     private String notes;
+    private String paymentIntentId;
 
     public LocalDate getReservationDate() {
         return reservationDate;
@@ -75,5 +76,13 @@ public class PublicReservationRequest {
 
     public void setNotes(String notes) {
         this.notes = notes;
+    }
+
+    public String getPaymentIntentId() {
+        return paymentIntentId;
+    }
+
+    public void setPaymentIntentId(String paymentIntentId) {
+        this.paymentIntentId = paymentIntentId;
     }
 }

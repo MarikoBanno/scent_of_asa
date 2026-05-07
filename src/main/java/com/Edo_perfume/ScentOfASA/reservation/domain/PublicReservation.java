@@ -14,6 +14,8 @@ public class PublicReservation {
     private String customerEmail;
     private String customerPhone;
     private String notes;
+    private String paymentIntentId;
+    private String paymentStatus;
     private String reservationStatus;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
@@ -88,6 +90,22 @@ public class PublicReservation {
 
     public void setNotes(String notes) {
         this.notes = notes;
+    }
+
+    public String getPaymentIntentId() {
+        return paymentIntentId;
+    }
+
+    public void setPaymentIntentId(String paymentIntentId) {
+        this.paymentIntentId = paymentIntentId;
+    }
+
+    public String getPaymentStatus() {
+        return paymentStatus;
+    }
+
+    public void setPaymentStatus(String paymentStatus) {
+        this.paymentStatus = paymentStatus;
     }
 
     public String getReservationStatus() {
