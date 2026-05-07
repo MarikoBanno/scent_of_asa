@@ -7,5 +7,5 @@ CREATE TABLE IF NOT EXISTS store_holidays (
   created_by_staff_id BIGINT NULL,
   created_at TIMESTAMP NOT NULL,
   updated_at TIMESTAMP NOT NULL,
-  UNIQUE KEY uk_store_holidays_date_lang (holiday_date, applies_to_language)
+  CONSTRAINT uk_store_holidays_date_lang UNIQUE (holiday_date, applies_to_language)
 );
