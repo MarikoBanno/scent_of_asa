@@ -6,6 +6,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.doReturn;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -23,6 +24,7 @@ import com.Edo_perfume.ScentOfASA.guide.mapper.GuideStaffMapper;
 import com.Edo_perfume.ScentOfASA.holiday.dto.HolidayCalendarDayResponse;
 import com.Edo_perfume.ScentOfASA.holiday.service.StoreHolidayService;
 import com.Edo_perfume.ScentOfASA.reservation.mapper.PublicReservationMapper;
+import com.Edo_perfume.ScentOfASA.slot.config.SlotBootstrapProperties;
 import com.Edo_perfume.ScentOfASA.slot.domain.AdminSlot;
 import com.Edo_perfume.ScentOfASA.slot.dto.AdminSlotMonthResponse;
 import com.Edo_perfume.ScentOfASA.slot.dto.AdminSlotResponse;
@@ -35,7 +37,7 @@ class AdminSlotServiceTest {
     @Mock
     private AdminSlotMapper adminSlotMapper;
 
-    @Mock
+    @Mock(lenient = true)
     private GuideStaffMapper guideStaffMapper;
 
     @Mock
@@ -44,11 +46,15 @@ class AdminSlotServiceTest {
     @Mock
     private PublicReservationMapper publicReservationMapper;
 
+    @Mock(lenient = true)
+    private SlotBootstrapProperties slotBootstrapProperties;
+
     @InjectMocks
     private AdminSlotService adminSlotService;
 
     @Test
     void getMonthlySlotsCreatesMissingMonthlySlots() {
+        when(slotBootstrapProperties.isEnabled()).thenReturn(false);
         when(adminSlotMapper.findByDateTimeAndLanguage(any(), any(), any())).thenReturn(null);
         when(adminSlotMapper.findByMonth(LocalDate.of(2026, 5, 1), LocalDate.of(2026, 5, 31)))
                 .thenReturn(List.of());
@@ -68,6 +74,7 @@ class AdminSlotServiceTest {
 
     @Test
     void getMonthlySlotsMarksJapaneseSlotClosedWhenJapaneseHolidayExists() {
+        when(slotBootstrapProperties.isEnabled()).thenReturn(false);
         AdminSlot englishSlot = createSlot(1L, LocalDate.of(2026, 5, 22), "11:00", "en", "English Guide", "OPEN");
         AdminSlot japaneseSlot = createSlot(2L, LocalDate.of(2026, 5, 22), "11:00", "ja", "Japanese Guide", "OPEN");
 
@@ -105,6 +112,7 @@ class AdminSlotServiceTest {
 
     @Test
     void updateSlotRejectsUnknownStatus() {
+        when(slotBootstrapProperties.isEnabled()).thenReturn(false);
         AdminSlotUpdateRequest request = new AdminSlotUpdateRequest();
         request.setSlotStatus("BAD");
 
@@ -118,6 +126,7 @@ class AdminSlotServiceTest {
 
     @Test
     void updateSlotNormalizesGuideNameAndReturnsUpdatedSlot() {
+        when(slotBootstrapProperties.isEnabled()).thenReturn(false);
         AdminSlotUpdateRequest request = new AdminSlotUpdateRequest();
         request.setGuideStaffId(4L);
         request.setSlotStatus("limited");
@@ -139,6 +148,7 @@ class AdminSlotServiceTest {
 
     @Test
     void getMonthlySlotsMarksUnassignedOperatingSlotStopped() {
+        when(slotBootstrapProperties.isEnabled()).thenReturn(false);
         AdminSlot slot = createSlot(1L, LocalDate.of(2026, 5, 22), "11:00", "ja", null, "OPEN");
         slot.setGuideStaffId(null);
 
@@ -166,6 +176,7 @@ class AdminSlotServiceTest {
 
     @Test
     void updateSlotRejectsGuideLanguageMismatch() {
+        when(slotBootstrapProperties.isEnabled()).thenReturn(false);
         AdminSlotUpdateRequest request = new AdminSlotUpdateRequest();
         request.setGuideStaffId(4L);
         request.setSlotStatus("OPEN");
@@ -181,6 +192,7 @@ class AdminSlotServiceTest {
 
     @Test
     void updateSlotRejectsOpenStatusWithoutGuideAssignment() {
+        when(slotBootstrapProperties.isEnabled()).thenReturn(false);
         AdminSlotUpdateRequest request = new AdminSlotUpdateRequest();
         request.setSlotStatus("OPEN");
 
@@ -194,6 +206,7 @@ class AdminSlotServiceTest {
 
     @Test
     void getMonthlySlotsMarksTodayAsBookingClosedWhenNotHoliday() {
+        when(slotBootstrapProperties.isEnabled()).thenReturn(false);
         LocalDate today = LocalDate.now();
         LocalDate monthStart = today.withDayOfMonth(1);
         LocalDate monthEnd = today.withDayOfMonth(today.lengthOfMonth());
@@ -216,6 +229,89 @@ class AdminSlotServiceTest {
                 assertThat(day.isClosed()).isFalse();
             }
         });
+    }
+
+    @Test
+    void getMonthlySlotsAssignsRecurringDefaultGuidesWhenBootstrapEnabled() {
+        when(slotBootstrapProperties.isEnabled()).thenReturn(true);
+        when(adminSlotMapper.findByDateTimeAndLanguage(any(), any(), any())).thenReturn(null);
+        when(guideStaffMapper.findByLoginId(any())).thenReturn(null);
+        when(adminSlotMapper.findByMonth(LocalDate.of(2026, 5, 1), LocalDate.of(2026, 5, 31)))
+                .thenReturn(List.of());
+        when(publicReservationMapper.findByMonth(LocalDate.of(2026, 5, 1), LocalDate.of(2026, 5, 31), "en"))
+                .thenReturn(List.of());
+        when(publicReservationMapper.findByMonth(LocalDate.of(2026, 5, 1), LocalDate.of(2026, 5, 31), "ja"))
+                .thenReturn(List.of());
+        when(storeHolidayService.findMonthlyHolidays(2026, 5, null)).thenReturn(List.of());
+        when(guideStaffMapper.findByLoginId("guide_en_1")).thenReturn(createGuideStaff(1L, "guide_en_1", "English Guide 1", "en"));
+        when(guideStaffMapper.findByLoginId("guide_en_2")).thenReturn(createGuideStaff(2L, "guide_en_2", "English Guide 2", "en"));
+        when(guideStaffMapper.findByLoginId("guide_en_3")).thenReturn(createGuideStaff(3L, "guide_en_3", "English Guide 3", "en"));
+        when(guideStaffMapper.findByLoginId("guide_ja_1")).thenReturn(createGuideStaff(4L, "guide_ja_1", "Japanese Guide 1", "ja"));
+        when(guideStaffMapper.findByLoginId("guide_ja_2")).thenReturn(createGuideStaff(5L, "guide_ja_2", "Japanese Guide 2", "ja"));
+        when(guideStaffMapper.findByLoginId("guide_ja_3")).thenReturn(createGuideStaff(6L, "guide_ja_3", "Japanese Guide 3", "ja"));
+
+        adminSlotService.getMonthlySlots(2026, 5);
+
+        ArgumentCaptor<AdminSlot> captor = ArgumentCaptor.forClass(AdminSlot.class);
+        verify(adminSlotMapper, org.mockito.Mockito.times(186)).insert(captor.capture());
+        assertThat(captor.getAllValues())
+                .anySatisfy(slot -> {
+                    if (slot.getSlotDate().equals(LocalDate.of(2026, 5, 1))
+                            && "en".equals(slot.getGuideLanguage())
+                            && "11:00".equals(slot.getTimeSlot())) {
+                        assertThat(slot.getGuideName()).isEqualTo("English Guide 1");
+                        assertThat(slot.getSlotStatus()).isEqualTo("OPEN");
+                    }
+                })
+                .anySatisfy(slot -> {
+                    if (slot.getSlotDate().equals(LocalDate.of(2026, 5, 1))
+                            && "ja".equals(slot.getGuideLanguage())
+                            && "15:30".equals(slot.getTimeSlot())) {
+                        assertThat(slot.getGuideName()).isEqualTo("Japanese Guide 3");
+                        assertThat(slot.getSlotStatus()).isEqualTo("OPEN");
+                    }
+                })
+                .anySatisfy(slot -> {
+                    if (slot.getSlotDate().equals(LocalDate.of(2026, 5, 6))
+                            && "en".equals(slot.getGuideLanguage())
+                            && "11:00".equals(slot.getTimeSlot())) {
+                        assertThat(slot.getGuideName()).isNull();
+                        assertThat(slot.getSlotStatus()).isEqualTo("STOPPED");
+                    }
+                });
+    }
+
+    @Test
+    void getMonthlySlotsBackfillsExistingStoppedRecurringSlotsWhenBootstrapEnabled() {
+        when(slotBootstrapProperties.isEnabled()).thenReturn(true);
+        when(adminSlotMapper.findByDateTimeAndLanguage(any(), any(), any())).thenReturn(null);
+
+        AdminSlot existingThursdayEnglish = createSlot(10L, LocalDate.of(2026, 5, 7), "11:00", "en", null, "STOPPED");
+        AdminSlot existingThursdayJapanese = createSlot(11L, LocalDate.of(2026, 5, 7), "13:00", "ja", null, "STOPPED");
+
+        doReturn(existingThursdayEnglish).when(adminSlotMapper)
+                .findByDateTimeAndLanguage(LocalDate.of(2026, 5, 7), "11:00", "en");
+        doReturn(existingThursdayJapanese).when(adminSlotMapper)
+                .findByDateTimeAndLanguage(LocalDate.of(2026, 5, 7), "13:00", "ja");
+        doReturn(createGuideStaff(1L, "guide_en_1", "English Guide 1", "en")).when(guideStaffMapper)
+                .findByLoginId("guide_en_1");
+        doReturn(createGuideStaff(5L, "guide_ja_2", "Japanese Guide 2", "ja")).when(guideStaffMapper)
+                .findByLoginId("guide_ja_2");
+        when(adminSlotMapper.findByMonth(LocalDate.of(2026, 5, 1), LocalDate.of(2026, 5, 31)))
+                .thenReturn(List.of(existingThursdayEnglish, existingThursdayJapanese));
+        when(publicReservationMapper.findByMonth(LocalDate.of(2026, 5, 1), LocalDate.of(2026, 5, 31), "en"))
+                .thenReturn(List.of());
+        when(publicReservationMapper.findByMonth(LocalDate.of(2026, 5, 1), LocalDate.of(2026, 5, 31), "ja"))
+                .thenReturn(List.of());
+        when(storeHolidayService.findMonthlyHolidays(2026, 5, null)).thenReturn(List.of());
+
+        adminSlotService.getMonthlySlots(2026, 5);
+
+        assertThat(existingThursdayEnglish.getGuideName()).isEqualTo("English Guide 1");
+        assertThat(existingThursdayEnglish.getSlotStatus()).isEqualTo("OPEN");
+        assertThat(existingThursdayJapanese.getGuideName()).isEqualTo("Japanese Guide 2");
+        assertThat(existingThursdayJapanese.getSlotStatus()).isEqualTo("OPEN");
+        verify(adminSlotMapper, org.mockito.Mockito.atLeast(2)).update(any(AdminSlot.class));
     }
 
     private AdminSlot createSlot(Long id, LocalDate date, String timeSlot, String language,

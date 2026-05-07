@@ -2,6 +2,7 @@ package com.Edo_perfume.ScentOfASA.slot.service;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.DayOfWeek;
 import java.time.YearMonth;
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -26,6 +27,7 @@ import com.Edo_perfume.ScentOfASA.slot.dto.AdminSlotMonthResponse;
 import com.Edo_perfume.ScentOfASA.slot.dto.AdminSlotResponse;
 import com.Edo_perfume.ScentOfASA.slot.dto.AdminSlotUpdateRequest;
 import com.Edo_perfume.ScentOfASA.slot.mapper.AdminSlotMapper;
+import com.Edo_perfume.ScentOfASA.slot.config.SlotBootstrapProperties;
 
 @Service
 @Transactional
@@ -40,15 +42,18 @@ public class AdminSlotService {
     private final GuideStaffMapper guideStaffMapper;
     private final StoreHolidayService storeHolidayService;
     private final PublicReservationMapper publicReservationMapper;
+    private final SlotBootstrapProperties slotBootstrapProperties;
 
     public AdminSlotService(AdminSlotMapper adminSlotMapper,
                             GuideStaffMapper guideStaffMapper,
                             StoreHolidayService storeHolidayService,
-                            PublicReservationMapper publicReservationMapper) {
+                            PublicReservationMapper publicReservationMapper,
+                            SlotBootstrapProperties slotBootstrapProperties) {
         this.adminSlotMapper = adminSlotMapper;
         this.guideStaffMapper = guideStaffMapper;
         this.storeHolidayService = storeHolidayService;
         this.publicReservationMapper = publicReservationMapper;
+        this.slotBootstrapProperties = slotBootstrapProperties;
     }
 
     public AdminSlotMonthResponse getMonthlySlots(int year, int month) {
@@ -132,16 +137,16 @@ public class AdminSlotService {
         for (LocalDate date = yearMonth.atDay(1); !date.isAfter(yearMonth.atEndOfMonth()); date = date.plusDays(1)) {
             for (String guideLanguage : SUPPORTED_LANGUAGES) {
                 for (String timeSlot : SUPPORTED_TIME_SLOTS) {
-                    if (adminSlotMapper.findByDateTimeAndLanguage(date, timeSlot, guideLanguage) != null) {
+                    AdminSlot existingSlot = adminSlotMapper.findByDateTimeAndLanguage(date, timeSlot, guideLanguage);
+                    if (existingSlot != null) {
+                        applyDefaultAssignmentToExistingSlot(existingSlot);
                         continue;
                     }
                     AdminSlot slot = new AdminSlot();
                     slot.setSlotDate(date);
                     slot.setTimeSlot(timeSlot);
                     slot.setGuideLanguage(guideLanguage);
-                    slot.setGuideStaffId(null);
-                    slot.setGuideName(null);
-                    slot.setSlotStatus("STOPPED");
+                    applyDefaultAssignment(slot);
                     LocalDateTime now = LocalDateTime.now();
                     slot.setCreatedAt(now);
                     slot.setUpdatedAt(now);
@@ -149,6 +154,30 @@ public class AdminSlotService {
                 }
             }
         }
+    }
+
+    private void applyDefaultAssignmentToExistingSlot(AdminSlot existingSlot) {
+        if (!slotBootstrapProperties.isEnabled()) {
+            return;
+        }
+        if (existingSlot.getGuideStaffId() != null || !"STOPPED".equals(existingSlot.getSlotStatus())) {
+            return;
+        }
+
+        Long originalGuideStaffId = existingSlot.getGuideStaffId();
+        String originalGuideName = existingSlot.getGuideName();
+        String originalStatus = existingSlot.getSlotStatus();
+
+        applyDefaultAssignment(existingSlot);
+        boolean changed = !equalsNullable(originalGuideStaffId, existingSlot.getGuideStaffId())
+                || !equalsNullable(originalGuideName, existingSlot.getGuideName())
+                || !equalsNullable(originalStatus, existingSlot.getSlotStatus());
+        if (!changed) {
+            return;
+        }
+
+        existingSlot.setUpdatedAt(LocalDateTime.now());
+        adminSlotMapper.update(existingSlot);
     }
 
     private Map<LocalDate, Map<String, HolidayCalendarDayResponse>> buildHolidayMap(int year, int month) {
@@ -235,6 +264,70 @@ public class AdminSlotService {
 
     private int safeGuestCount(Integer value) {
         return value == null ? 0 : value;
+    }
+
+    private boolean equalsNullable(Object left, Object right) {
+        return left == null ? right == null : left.equals(right);
+    }
+
+    private void applyDefaultAssignment(AdminSlot slot) {
+        if (!slotBootstrapProperties.isEnabled()) {
+            slot.setGuideStaffId(null);
+            slot.setGuideName(null);
+            slot.setSlotStatus("STOPPED");
+            return;
+        }
+
+        if (!isRecurringOpenDay(slot.getSlotDate())) {
+            slot.setGuideStaffId(null);
+            slot.setGuideName(null);
+            slot.setSlotStatus("STOPPED");
+            return;
+        }
+
+        String loginId = resolveDefaultGuideLoginId(slot.getGuideLanguage(), slot.getTimeSlot());
+        if (loginId == null) {
+            slot.setGuideStaffId(null);
+            slot.setGuideName(null);
+            slot.setSlotStatus("STOPPED");
+            return;
+        }
+
+        GuideStaff guideStaff = guideStaffMapper.findByLoginId(loginId);
+        if (guideStaff == null || !guideStaff.isActive()) {
+            slot.setGuideStaffId(null);
+            slot.setGuideName(null);
+            slot.setSlotStatus("STOPPED");
+            return;
+        }
+
+        slot.setGuideStaffId(guideStaff.getId());
+        slot.setGuideName(guideStaff.getDisplayName());
+        slot.setSlotStatus("OPEN");
+    }
+
+    private boolean isRecurringOpenDay(LocalDate slotDate) {
+        DayOfWeek dayOfWeek = slotDate.getDayOfWeek();
+        return dayOfWeek == DayOfWeek.THURSDAY || dayOfWeek == DayOfWeek.FRIDAY;
+    }
+
+    private String resolveDefaultGuideLoginId(String guideLanguage, String timeSlot) {
+        String suffix = switch (timeSlot) {
+            case "11:00" -> "1";
+            case "13:00" -> "2";
+            case "15:30" -> "3";
+            default -> null;
+        };
+        if (suffix == null) {
+            return null;
+        }
+        if ("en".equals(guideLanguage)) {
+            return "guide_en_" + suffix;
+        }
+        if ("ja".equals(guideLanguage)) {
+            return "guide_ja_" + suffix;
+        }
+        return null;
     }
 
     private void validateYearMonth(int year, int month) {
