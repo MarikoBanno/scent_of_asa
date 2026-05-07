@@ -39,6 +39,15 @@ Windows:
 - スタッフ側の `reservation_detail.html` で予約一覧を DB から閲覧できる
 - スタッフ側の `reservation_detail.html` で予約ステータスを更新できる
 
+## 予約デモを行うには
+
+slotページの任意日付をクリックし、右側のボックスから１担当/２受付中/３「この枠を保存」の順に選択してください
+（本来はガイド画面での操作も必要なのですが、簡易デモ版としてスロットだけで操作できるようにしています）
+https://scent-of-asa.onrender.com/staff/slot.html
+選択したスロットの表示が変更されたら、予約画面に戻ります
+https://scent-of-asa.onrender.com/public/booking-ja.html
+先ほど選択した日付を指定して予約を行ってください。
+
 ## 画面ルート
 
 ### 公開ページ
