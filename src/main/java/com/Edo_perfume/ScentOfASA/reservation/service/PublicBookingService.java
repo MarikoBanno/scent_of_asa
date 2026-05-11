@@ -12,6 +12,8 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -33,6 +35,7 @@ import com.Edo_perfume.ScentOfASA.slot.service.AdminSlotService;
 @Transactional
 public class PublicBookingService {
 
+    private static final Logger log = LoggerFactory.getLogger(PublicBookingService.class);
     private static final int SLOT_CAPACITY = 4;
     private static final String BOOKING_CLOSED_REASON = "RESERVATION_CLOSED";
     private static final List<String> SUPPORTED_TIME_SLOTS = List.of("11:00", "13:00", "15:30");
@@ -143,10 +146,49 @@ public class PublicBookingService {
         reservation.setCreatedAt(now);
         reservation.setUpdatedAt(now);
 
+        log.info(
+                "Creating reservation: date={}, timeSlot={}, language={}, guestCount={}, customerName={}, customerEmail={}, customerPhone={}, paymentIntentId={}",
+                reservation.getReservationDate(),
+                reservation.getTimeSlot(),
+                reservation.getGuideLanguage(),
+                reservation.getGuestCount(),
+                reservation.getCustomerName(),
+                maskEmail(reservation.getCustomerEmail()),
+                maskPhone(reservation.getCustomerPhone()),
+                abbreviatePaymentIntentId(reservation.getPaymentIntentId())
+        );
+
         try {
             publicReservationMapper.insert(reservation);
         } catch (DuplicateKeyException ex) {
             throw new IllegalStateException("The selected slot is no longer available.");
+        }
+
+        log.info(
+                "Reservation inserted: id={}, reservationCode=SOA-{}, status={}, paymentStatus={}",
+                reservation.getId(),
+                reservation.getId(),
+                reservation.getReservationStatus(),
+                reservation.getPaymentStatus()
+        );
+
+        PublicReservation persistedReservation = publicReservationMapper.findById(reservation.getId());
+        if (persistedReservation == null) {
+            log.error("Reservation insert verification failed: id={} could not be reloaded from database.", reservation.getId());
+        } else {
+            log.info(
+                    "Reservation persisted verification: id={}, date={}, timeSlot={}, language={}, guestCount={}, customerName={}, customerEmail={}, customerPhone={}, status={}, paymentStatus={}",
+                    persistedReservation.getId(),
+                    persistedReservation.getReservationDate(),
+                    persistedReservation.getTimeSlot(),
+                    persistedReservation.getGuideLanguage(),
+                    persistedReservation.getGuestCount(),
+                    persistedReservation.getCustomerName(),
+                    maskEmail(persistedReservation.getCustomerEmail()),
+                    maskPhone(persistedReservation.getCustomerPhone()),
+                    persistedReservation.getReservationStatus(),
+                    persistedReservation.getPaymentStatus()
+            );
         }
 
         return new PublicReservationResponse(
@@ -292,6 +334,38 @@ public class PublicBookingService {
             throw new IllegalArgumentException("Payment is required before creating a reservation.");
         }
         return normalized;
+    }
+
+    private String maskEmail(String email) {
+        if (email == null || email.isBlank()) {
+            return null;
+        }
+        int atIndex = email.indexOf('@');
+        if (atIndex <= 1) {
+            return "***";
+        }
+        return email.charAt(0) + "***" + email.substring(atIndex);
+    }
+
+    private String maskPhone(String phone) {
+        if (phone == null || phone.isBlank()) {
+            return null;
+        }
+        String digitsOnly = phone.replaceAll("\\D", "");
+        if (digitsOnly.length() <= 4) {
+            return "***";
+        }
+        return "***" + digitsOnly.substring(digitsOnly.length() - 4);
+    }
+
+    private String abbreviatePaymentIntentId(String paymentIntentId) {
+        if (paymentIntentId == null || paymentIntentId.isBlank()) {
+            return null;
+        }
+        if (paymentIntentId.length() <= 10) {
+            return paymentIntentId;
+        }
+        return paymentIntentId.substring(0, 6) + "..." + paymentIntentId.substring(paymentIntentId.length() - 4);
     }
 
     private boolean isBookingClosedDate(LocalDate reservationDate) {
